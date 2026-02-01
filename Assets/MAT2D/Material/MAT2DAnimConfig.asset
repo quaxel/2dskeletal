@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4aec40f8600f94b84a08a9cc334fed31, type: 3}
+  m_Name: MAT2DAnimConfig
+  m_EditorClassIdentifier: Assembly-CSharp::Mat2D.Mat2DAnimConfig
+  clipCount: 1
+  sampleFPS: 30
+  totalFrames: 30
+  clipStartFrame: 00000000
+  clipFrameCount: 1e000000

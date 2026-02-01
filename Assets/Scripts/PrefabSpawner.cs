@@ -41,12 +41,12 @@ public sealed class PrefabSpawner : MonoBehaviour
 
         if (useSharedPlayableGraph)
         {
-            sharedGraph = PlayableGraph.Create("PrefabSpawnerGraph");
-            sharedGraph.Play();
+          //  sharedGraph = PlayableGraph.Create("PrefabSpawnerGraph");
+           // sharedGraph.Play();
         }
 
         StartCoroutine(SpawnRoutine());
-        StartCoroutine(CullingRoutine());
+        //StartCoroutine(CullingRoutine());
     }
 
     private IEnumerator SpawnRoutine()
@@ -57,7 +57,7 @@ public sealed class PrefabSpawner : MonoBehaviour
             float z = Random.Range(minZ, maxZ);
             Vector3 position = new Vector3(x, y, z);
             GameObject instance = Instantiate(prefab, position, Quaternion.Euler(60f, 0f, 0f), transform);
-            BindPlayableAnimation(instance);
+            //BindPlayableAnimation(instance);
 
             if (spawnDelaySeconds > 0f)
             {
@@ -65,7 +65,7 @@ public sealed class PrefabSpawner : MonoBehaviour
             }
         }
     }
-
+/*
     private void BindPlayableAnimation(GameObject instance)
     {
         Animator animator = instance.GetComponent<Animator>();
@@ -161,4 +161,5 @@ public sealed class PrefabSpawner : MonoBehaviour
             }
         }
     }
+    */
 }

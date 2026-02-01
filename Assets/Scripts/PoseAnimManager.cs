@@ -26,6 +26,9 @@ public sealed class PoseAnimManager : MonoBehaviour
     private NativeArray<float3> kPos;
     private NativeArray<float> kRotZDeg;
     private NativeArray<float3> kScale;
+    private NativeArray<byte> clipHasPos;
+    private NativeArray<byte> clipHasRot;
+    private NativeArray<byte> clipHasScale;
     private NativeArray<int> clipFrameCount;
     private NativeArray<float> clipFps;
 
@@ -39,6 +42,9 @@ public sealed class PoseAnimManager : MonoBehaviour
     private NativeArray<float3> outPos;
     private NativeArray<float> outRotZDeg;
     private NativeArray<float3> outScale;
+    private NativeArray<float3> bindPos;
+    private NativeArray<float> bindRotZDeg;
+    private NativeArray<float3> bindScale;
 
     private NativeArray<int> bucket0;
     private NativeArray<int> bucket1;
@@ -69,6 +75,9 @@ public sealed class PoseAnimManager : MonoBehaviour
         kPos = new NativeArray<float3>(ClipCount * PartCount * MaxFrames, Allocator.Persistent);
         kRotZDeg = new NativeArray<float>(ClipCount * PartCount * MaxFrames, Allocator.Persistent);
         kScale = new NativeArray<float3>(ClipCount * PartCount * MaxFrames, Allocator.Persistent);
+        clipHasPos = new NativeArray<byte>(ClipCount * PartCount, Allocator.Persistent);
+        clipHasRot = new NativeArray<byte>(ClipCount * PartCount, Allocator.Persistent);
+        clipHasScale = new NativeArray<byte>(ClipCount * PartCount, Allocator.Persistent);
         clipFrameCount = new NativeArray<int>(ClipCount, Allocator.Persistent);
         clipFps = new NativeArray<float>(ClipCount, Allocator.Persistent);
 
@@ -82,6 +91,9 @@ public sealed class PoseAnimManager : MonoBehaviour
         outPos = new NativeArray<float3>(MaxActors * PartCount, Allocator.Persistent);
         outRotZDeg = new NativeArray<float>(MaxActors * PartCount, Allocator.Persistent);
         outScale = new NativeArray<float3>(MaxActors * PartCount, Allocator.Persistent);
+        bindPos = new NativeArray<float3>(MaxActors * PartCount, Allocator.Persistent);
+        bindRotZDeg = new NativeArray<float>(MaxActors * PartCount, Allocator.Persistent);
+        bindScale = new NativeArray<float3>(MaxActors * PartCount, Allocator.Persistent);
 
         bucket0 = new NativeArray<int>(MaxActors, Allocator.Persistent);
         bucket1 = new NativeArray<int>(MaxActors, Allocator.Persistent);
@@ -109,6 +121,9 @@ public sealed class PoseAnimManager : MonoBehaviour
         DisposeArray(kPos);
         DisposeArray(kRotZDeg);
         DisposeArray(kScale);
+        DisposeArray(clipHasPos);
+        DisposeArray(clipHasRot);
+        DisposeArray(clipHasScale);
         DisposeArray(clipFrameCount);
         DisposeArray(clipFps);
         DisposeArray(time);
@@ -120,6 +135,9 @@ public sealed class PoseAnimManager : MonoBehaviour
         DisposeArray(outPos);
         DisposeArray(outRotZDeg);
         DisposeArray(outScale);
+        DisposeArray(bindPos);
+        DisposeArray(bindRotZDeg);
+        DisposeArray(bindScale);
         DisposeArray(bucket0);
         DisposeArray(bucket1);
         DisposeArray(bucket2);
@@ -152,7 +170,7 @@ public sealed class PoseAnimManager : MonoBehaviour
 
             int frameCount = math.clamp(so.frameCount, 1, MaxFrames);
             clipFrameCount[clip] = frameCount;
-            clipFps[clip] = Mathf.Max(1, so.fps);
+            clipFps[clip] = Mathf.Max(0.01f, so.fps);
 
             int requiredLen = PartCount * frameCount;
             if (so.pos == null || so.rotZDeg == null || so.scale == null)
@@ -172,6 +190,10 @@ public sealed class PoseAnimManager : MonoBehaviour
             {
                 int partOffset = part * frameCount;
                 int packedBase = (clip * PartCount + part) * MaxFrames;
+                int maskIndex = clip * PartCount + part;
+                bool hasPos = false;
+                bool hasRot = false;
+                bool hasScale = false;
                 for (int frame = 0; frame < frameCount; frame++)
                 {
                     int src = partOffset + frame;
@@ -181,7 +203,24 @@ public sealed class PoseAnimManager : MonoBehaviour
                     kPos[dst] = new float3(p.x, p.y, p.z);
                     kScale[dst] = new float3(s.x, s.y, s.z);
                     kRotZDeg[dst] = so.rotZDeg[src];
+
+                    if (!hasPos && (Mathf.Abs(p.x) > 0.0001f || Mathf.Abs(p.y) > 0.0001f || Mathf.Abs(p.z) > 0.0001f))
+                    {
+                        hasPos = true;
+                    }
+                    if (!hasRot && Mathf.Abs(so.rotZDeg[src]) > 0.0001f)
+                    {
+                        hasRot = true;
+                    }
+                    if (!hasScale && (Mathf.Abs(s.x - 1f) > 0.0001f || Mathf.Abs(s.y - 1f) > 0.0001f || Mathf.Abs(s.z - 1f) > 0.0001f))
+                    {
+                        hasScale = true;
+                    }
                 }
+
+                clipHasPos[maskIndex] = hasPos ? (byte)1 : (byte)0;
+                clipHasRot[maskIndex] = hasRot ? (byte)1 : (byte)0;
+                clipHasScale[maskIndex] = hasScale ? (byte)1 : (byte)0;
             }
         }
     }
@@ -236,10 +275,16 @@ public sealed class PoseAnimManager : MonoBehaviour
             kPos = kPos,
             kRotZDeg = kRotZDeg,
             kScale = kScale,
+            clipHasPos = clipHasPos,
+            clipHasRot = clipHasRot,
+            clipHasScale = clipHasScale,
             clipFrameCount = clipFrameCount,
             clipFps = clipFps,
             speed = speed,
             playing = playing,
+            bindPos = bindPos,
+            bindRotZDeg = bindRotZDeg,
+            bindScale = bindScale,
             time = time,
             outPos = outPos,
             outRotZDeg = outRotZDeg,
@@ -325,7 +370,19 @@ public sealed class PoseAnimManager : MonoBehaviour
         int baseIndex = index * PartCount;
         for (int i = 0; i < PartCount; i++)
         {
-            allPartsFlat[baseIndex + i] = parts[i];
+            Transform part = parts[i];
+            allPartsFlat[baseIndex + i] = part;
+            if (part != null)
+            {
+                Vector3 p = part.localPosition;
+                Vector3 s = part.localScale;
+                bindPos[baseIndex + i] = new float3(p.x, p.y, p.z);
+                bindScale[baseIndex + i] = new float3(s.x, s.y, s.z);
+                bindRotZDeg[baseIndex + i] = part.localEulerAngles.z;
+                outPos[baseIndex + i] = bindPos[baseIndex + i];
+                outScale[baseIndex + i] = bindScale[baseIndex + i];
+                outRotZDeg[baseIndex + i] = bindRotZDeg[baseIndex + i];
+            }
         }
 
         active[index] = 1;

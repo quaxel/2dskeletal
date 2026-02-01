@@ -8,6 +8,7 @@ public sealed class PoseAnimActor : MonoBehaviour
     [SerializeField] private bool autoFindChildren = true;
 
     private int actorIndex = -1;
+    private bool registered;
 
     private void Awake()
     {
@@ -30,24 +31,8 @@ public sealed class PoseAnimActor : MonoBehaviour
 
     private void OnEnable()
     {
-        if (PoseAnimManager.Instance == null)
-        {
-            return;
-        }
-
-        actorIndex = PoseAnimManager.Instance.RegisterActor(parts);
-        if (actorIndex >= 0)
-        {
-            PoseAnimManager.Instance.SetClip(actorIndex, clipId, true);
-            if (playOnEnable)
-            {
-                PoseAnimManager.Instance.Play(actorIndex);
-            }
-            else
-            {
-                PoseAnimManager.Instance.Stop(actorIndex);
-            }
-        }
+        registered = false;
+        TryRegister();
     }
 
     private void OnDisable()
@@ -61,6 +46,39 @@ public sealed class PoseAnimActor : MonoBehaviour
         {
             PoseAnimManager.Instance.UnregisterActor(actorIndex);
             actorIndex = -1;
+            registered = false;
+        }
+    }
+
+    private void Start()
+    {
+        if (!registered)
+        {
+            TryRegister();
+        }
+    }
+
+    private void TryRegister()
+    {
+        var mgr = PoseAnimManager.Instance;
+        if (mgr == null)
+        {
+            return;
+        }
+
+        actorIndex = mgr.RegisterActor(parts);
+        if (actorIndex >= 0)
+        {
+            registered = true;
+            mgr.SetClip(actorIndex, clipId, true);
+            if (playOnEnable)
+            {
+                mgr.Play(actorIndex);
+            }
+            else
+            {
+                mgr.Stop(actorIndex);
+            }
         }
     }
 }

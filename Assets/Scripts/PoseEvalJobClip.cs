@@ -15,10 +15,16 @@ public struct PoseEvalJobClip : IJobParallelFor
     [ReadOnly] public NativeArray<float3> kPos;
     [ReadOnly] public NativeArray<float> kRotZDeg;
     [ReadOnly] public NativeArray<float3> kScale;
+    [ReadOnly] public NativeArray<byte> clipHasPos;
+    [ReadOnly] public NativeArray<byte> clipHasRot;
+    [ReadOnly] public NativeArray<byte> clipHasScale;
     [ReadOnly] public NativeArray<int> clipFrameCount;
     [ReadOnly] public NativeArray<float> clipFps;
     [ReadOnly] public NativeArray<float> speed;
     [ReadOnly] public NativeArray<byte> playing;
+    [ReadOnly] public NativeArray<float3> bindPos;
+    [ReadOnly] public NativeArray<float> bindRotZDeg;
+    [ReadOnly] public NativeArray<float3> bindScale;
 
     [NativeDisableParallelForRestriction] public NativeArray<float> time;
     [NativeDisableParallelForRestriction] public NativeArray<float3> outPos;
@@ -85,6 +91,7 @@ public struct PoseEvalJobClip : IJobParallelFor
         {
             int idx0 = ((baseClip + part) * maxFrames) + frame0;
             int idx1 = ((baseClip + part) * maxFrames) + frame1;
+            int maskIndex = baseClip + part;
 
             float3 p0 = kPos[idx0];
             float3 p1 = kPos[idx1];
@@ -98,9 +105,33 @@ public struct PoseEvalJobClip : IJobParallelFor
             float r = LerpAngleDeg(r0, r1, lerpT);
 
             int outIndex = baseOut + part;
-            outPos[outIndex] = p;
-            outScale[outIndex] = s;
-            outRotZDeg[outIndex] = r;
+
+            if (clipHasPos[maskIndex] != 0)
+            {
+                outPos[outIndex] = p;
+            }
+            else
+            {
+                outPos[outIndex] = bindPos[outIndex];
+            }
+
+            if (clipHasScale[maskIndex] != 0)
+            {
+                outScale[outIndex] = s;
+            }
+            else
+            {
+                outScale[outIndex] = bindScale[outIndex];
+            }
+
+            if (clipHasRot[maskIndex] != 0)
+            {
+                outRotZDeg[outIndex] = r;
+            }
+            else
+            {
+                outRotZDeg[outIndex] = bindRotZDeg[outIndex];
+            }
         }
     }
 
