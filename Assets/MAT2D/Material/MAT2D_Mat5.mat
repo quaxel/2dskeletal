@@ -40,11 +40,11 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Mat0:
-        m_Texture: {fileID: 2800000, guid: 30b3e976d81304617b4d207938dc1df2, type: 2}
+        m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _Mat1:
-        m_Texture: {fileID: 2800000, guid: 2a235d851c7e34a9dbeadaf484f6025a, type: 2}
+        m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _NormalMap:
@@ -71,7 +71,7 @@ Material:
     - _AnimClipStart4: {r: 80, g: 0, b: 0, a: 0}
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
-    - _MatTexSize: {r: 6, g: 30, b: 0.16666667, a: 0.033333335}
+    - _MatTexSize: {r: 6, g: 100, b: 0.16666667, a: 0.01}
     - _RendererColor: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

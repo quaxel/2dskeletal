@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: MAT2DAnimConfig
   m_EditorClassIdentifier: Assembly-CSharp::Mat2D.Mat2DAnimConfig
   clipCount: 1
-  sampleFPS: 30
-  totalFrames: 30
+  sampleFPS: 60
+  totalFrames: 60
   clipStartFrame: 00000000
-  clipFrameCount: 1e000000
+  clipFrameCount: 3c000000

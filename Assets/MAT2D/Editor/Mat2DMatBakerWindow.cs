@@ -168,10 +168,31 @@ namespace Mat2D
             int totalFrames = 0;
             for (int i = 0; i < _clips.Count; i++)
             {
-                int frames = Mathf.Max(1, Mathf.RoundToInt(_clips[i].length * _sampleFps));
+                // Calculate frames more accurately to avoid sampling beyond clip length
+                int frames = Mathf.Max(1, Mathf.CeilToInt(_clips[i].length * _sampleFps));
                 clipStarts.Add(totalFrames);
                 clipCounts.Add(frames);
                 totalFrames += frames;
+            }
+            
+            // Validate texture size limits
+            const int MAX_TEXTURE_SIZE = 2048;
+            if (totalFrames > MAX_TEXTURE_SIZE)
+            {
+                DestroyImmediate(instance);
+                EditorUtility.DisplayDialog("MAT2D Baker", 
+                    $"Total frames ({totalFrames}) exceeds maximum texture size ({MAX_TEXTURE_SIZE}).\n" +
+                    $"Reduce clip count, clip length, or sample FPS.\n" +
+                    $"Current: {_clips.Count} clips × ~{totalFrames / _clips.Count} avg frames", 
+                    "OK");
+                return;
+            }
+            
+            if (totalFrames == 0)
+            {
+                DestroyImmediate(instance);
+                EditorUtility.DisplayDialog("MAT2D Baker", "No frames to bake. Check clip lengths and sample FPS.", "OK");
+                return;
             }
 
             var mat0 = new Texture2D(6, totalFrames, TextureFormat.RGBAHalf, false, true);
@@ -200,8 +221,10 @@ namespace Mat2D
 
                     for (int f = 0; f < frames; f++)
                     {
-                        float t = f / _sampleFps;
-                        if (t > clip.length) t = clip.length;
+                        // Improved frame sampling: distribute frames evenly across clip length
+                        // This ensures the last frame samples exactly at clip.length
+                        float t = frames > 1 ? (f / (float)(frames - 1)) * clip.length : 0f;
+                        t = Mathf.Clamp(t, 0f, clip.length);
 
                         AnimationMode.SampleAnimationClip(instance, clip, t);
 

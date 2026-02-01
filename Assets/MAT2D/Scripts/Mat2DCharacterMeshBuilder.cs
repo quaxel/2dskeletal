@@ -2,7 +2,6 @@ using UnityEngine;
 
 namespace Mat2D
 {
-    [ExecuteAlways]
     [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
     public class Mat2DCharacterMeshBuilder : MonoBehaviour
     {
@@ -222,9 +221,12 @@ namespace Mat2D
                 anySprite = true;
                 Part p = parts[i];
 
-                // Use textureRect so packed SpriteAtlas UVs are correct (falls back to rect when not packed).
+                // Use textureRect for packed sprites (handles SpriteAtlas correctly)
                 Rect rect = sprite.textureRect;
                 p.sizePixels = new Vector2(rect.width, rect.height);
+                
+                // Important: sprite.pivot is in sprite's local space, not texture space
+                // For packed sprites, we need to use it directly as it's already correct
                 p.pivotPixels = sprite.pivot;
 
                 Texture2D tex = sprite.texture;
@@ -236,16 +238,20 @@ namespace Mat2D
                     }
                     else if (logWarnings && referenceTex != tex)
                     {
-                        Debug.LogWarning("MAT2D: partSprites use different textures; atlas UVs may be wrong. Ensure all sprites are from the same atlas texture.", this);
+                        Debug.LogWarning($"MAT2D: partSprites[{i}] uses different texture ({tex.name}) than first sprite ({referenceTex.name}). " +
+                            "Ensure all sprites are from the same atlas texture for correct UV mapping.", this);
                     }
 
                     float invW = 1f / tex.width;
                     float invH = 1f / tex.height;
+                    
+                    // textureRect already contains the correct pixel coordinates in the atlas
+                    // whether the sprite is packed or not
                     p.atlasRect = new Rect(rect.x * invW, rect.y * invH, rect.width * invW, rect.height * invH);
                 }
                 else if (logWarnings)
                 {
-                    Debug.LogWarning("MAT2D: Sprite texture is null; cannot compute atlas rect.", this);
+                    Debug.LogWarning($"MAT2D: Sprite texture is null for partSprites[{i}]; cannot compute atlas rect.", this);
                 }
 
                 if (!preserveOffsets)

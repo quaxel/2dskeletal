@@ -2,7 +2,6 @@ using UnityEngine;
 
 namespace Mat2D
 {
-    [ExecuteAlways]
     [RequireComponent(typeof(MeshRenderer))]
     public class Mat2DMatDebugAnimator : MonoBehaviour
     {

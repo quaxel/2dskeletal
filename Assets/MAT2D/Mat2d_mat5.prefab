@@ -207,6 +207,8 @@ MonoBehaviour:
   animId: 0
   flipX: 0
   timeOffset: 0
+  updateInPlayMode: 1
+  updateInEditMode: 0
 --- !u!114 &2965819181163509853
 MonoBehaviour:
   m_ObjectHideFlags: 0

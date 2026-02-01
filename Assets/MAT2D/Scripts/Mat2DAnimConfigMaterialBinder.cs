@@ -2,7 +2,6 @@ using UnityEngine;
 
 namespace Mat2D
 {
-    [ExecuteAlways]
     public class Mat2DAnimConfigMaterialBinder : MonoBehaviour
     {
         public Mat2DAnimConfig config;
@@ -42,6 +41,13 @@ namespace Mat2D
 
             for (int i = 0; i < config.clipCount; i++)
             {
+                // Bounds check to prevent IndexOutOfRangeException
+                if (i >= config.clipStartFrame.Length || i >= config.clipFrameCount.Length)
+                {
+                    Debug.LogWarning($"MAT2D: Clip {i} is out of bounds. clipStartFrame.Length={config.clipStartFrame.Length}, clipFrameCount.Length={config.clipFrameCount.Length}", this);
+                    break;
+                }
+                
                 int start = config.clipStartFrame[i];
                 int count = Mathf.Max(1, config.clipFrameCount[i]);
 

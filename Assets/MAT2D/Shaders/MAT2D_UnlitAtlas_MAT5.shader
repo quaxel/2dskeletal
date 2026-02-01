@@ -106,7 +106,8 @@ Shader "MAT2D/UnlitAtlas_MAT5"
 
             float2 GetClipData(float animId, out float clipFrames)
             {
-                // Supports up to 5 clips. 4 in vectors + 5th in separate vectors.
+                // Supports up to 5 clips (limited by Vector4 storage)
+                // For more clips, consider using a texture-based lookup or structured buffer
                 float4 start0 = _AnimClipStart;
                 float4 count0 = _AnimClipCountFrames;
                 float4 start1 = _AnimClipStart4;
@@ -116,7 +117,11 @@ Shader "MAT2D/UnlitAtlas_MAT5"
                 if (animId < 1.5) { clipFrames = count0.y; return float2(start0.y, count0.y); }
                 if (animId < 2.5) { clipFrames = count0.z; return float2(start0.z, count0.z); }
                 if (animId < 3.5) { clipFrames = count0.w; return float2(start0.w, count0.w); }
-                clipFrames = count1.x; return float2(start1.x, count1.x);
+                if (animId < 4.5) { clipFrames = count1.x; return float2(start1.x, count1.x); }
+                
+                // Fallback for out-of-range animId (use first clip)
+                clipFrames = count0.x;
+                return float2(start0.x, count0.x);
             }
 
             Varyings vert(Attributes input)
@@ -143,11 +148,16 @@ Shader "MAT2D/UnlitAtlas_MAT5"
                 float localFrame0 = floor(frame);
                 float frac = frame - localFrame0;
 
+                // Wrap frame within clip range
                 localFrame0 = localFrame0 - clipFrames * floor(localFrame0 / clipFrames);
                 float localFrame1 = localFrame0 + 1.0;
+                
+                // Fixed: Clamp next frame to avoid wrapping to frame 0 at the end
+                // This prevents interpolation between last and first frame
                 if (localFrame1 >= clipFrames)
                 {
-                    localFrame1 = 0.0;
+                    localFrame1 = clipFrames - 1.0; // Use last frame instead of wrapping
+                    frac = 1.0; // Full weight on last frame
                 }
 
                 float frame0 = clipStart + localFrame0;
@@ -271,6 +281,8 @@ Shader "MAT2D/UnlitAtlas_MAT5"
 
             float2 GetClipData(float animId, out float clipFrames)
             {
+                // Supports up to 5 clips (limited by Vector4 storage)
+                // For more clips, consider using a texture-based lookup or structured buffer
                 float4 start0 = _AnimClipStart;
                 float4 count0 = _AnimClipCountFrames;
                 float4 start1 = _AnimClipStart4;
@@ -280,7 +292,11 @@ Shader "MAT2D/UnlitAtlas_MAT5"
                 if (animId < 1.5) { clipFrames = count0.y; return float2(start0.y, count0.y); }
                 if (animId < 2.5) { clipFrames = count0.z; return float2(start0.z, count0.z); }
                 if (animId < 3.5) { clipFrames = count0.w; return float2(start0.w, count0.w); }
-                clipFrames = count1.x; return float2(start1.x, count1.x);
+                if (animId < 4.5) { clipFrames = count1.x; return float2(start1.x, count1.x); }
+                
+                // Fallback for out-of-range animId (use first clip)
+                clipFrames = count0.x;
+                return float2(start0.x, count0.x);
             }
 
             Varyings vert(Attributes input)
@@ -307,11 +323,16 @@ Shader "MAT2D/UnlitAtlas_MAT5"
                 float localFrame0 = floor(frame);
                 float frac = frame - localFrame0;
 
+                // Wrap frame within clip range
                 localFrame0 = localFrame0 - clipFrames * floor(localFrame0 / clipFrames);
                 float localFrame1 = localFrame0 + 1.0;
+                
+                // Fixed: Clamp next frame to avoid wrapping to frame 0 at the end
+                // This prevents interpolation between last and first frame
                 if (localFrame1 >= clipFrames)
                 {
-                    localFrame1 = 0.0;
+                    localFrame1 = clipFrames - 1.0; // Use last frame instead of wrapping
+                    frac = 1.0; // Full weight on last frame
                 }
 
                 float frame0 = clipStart + localFrame0;

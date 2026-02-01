@@ -2,7 +2,6 @@ using UnityEngine;
 
 namespace Mat2D
 {
-    [ExecuteAlways]
     [RequireComponent(typeof(MeshRenderer))]
     public class Mat2DAnimInstance : MonoBehaviour
     {
@@ -18,6 +17,12 @@ namespace Mat2D
         public int animId = 0;
         public bool flipX = false;
         public float timeOffset = 0f;
+        
+        [Header("Performance")]
+        [Tooltip("Update every frame in Play mode. Disable for static animations.")]
+        public bool updateInPlayMode = true;
+        [Tooltip("Update in Edit mode. Useful for previewing animations in the editor.")]
+        public bool updateInEditMode = false;
 
         static readonly int AnimTimeID = Shader.PropertyToID("_AnimTime");
         static readonly int AnimSpeedID = Shader.PropertyToID("_AnimSpeed");
@@ -25,22 +30,38 @@ namespace Mat2D
         static readonly int FlipXID = Shader.PropertyToID("_FlipX");
 
         MaterialPropertyBlock _mpb;
+        
+        // Cache to avoid unnecessary updates
+        float _lastAnimTime;
+        float _lastAnimSpeed;
+        int _lastAnimId;
+        bool _lastFlipX;
 
         void OnEnable()
         {
             EnsureTarget();
-            Apply();
+            Apply(true); // Force update on enable
         }
 
         void OnValidate()
         {
             EnsureTarget();
-            Apply();
+            Apply(true); // Force update on validate
         }
 
         void Update()
         {
-            Apply();
+            // Performance optimization: only update when needed
+            if (Application.isPlaying)
+            {
+                if (!updateInPlayMode) return;
+            }
+            else
+            {
+                if (!updateInEditMode) return;
+            }
+            
+            Apply(false);
         }
 
         void EnsureTarget()
@@ -61,7 +82,7 @@ namespace Mat2D
             }
         }
 
-        void Apply()
+        void Apply(bool forceUpdate)
         {
             if (targetRenderer == null)
             {
@@ -70,12 +91,27 @@ namespace Mat2D
 
             float t = useGlobalTime ? GetTime() + timeOffset : animTime;
 
+            // Only update if values changed (performance optimization)
+            bool hasChanged = forceUpdate ||
+                              _lastAnimTime != t ||
+                              _lastAnimSpeed != animSpeed ||
+                              _lastAnimId != animId ||
+                              _lastFlipX != flipX;
+            
+            if (!hasChanged) return;
+
             targetRenderer.GetPropertyBlock(_mpb);
             _mpb.SetFloat(AnimTimeID, t);
             _mpb.SetFloat(AnimSpeedID, animSpeed);
             _mpb.SetFloat(AnimIdID, animId);
             _mpb.SetFloat(FlipXID, flipX ? 1f : 0f);
             targetRenderer.SetPropertyBlock(_mpb);
+            
+            // Update cache
+            _lastAnimTime = t;
+            _lastAnimSpeed = animSpeed;
+            _lastAnimId = animId;
+            _lastFlipX = flipX;
         }
 
         float GetTime()

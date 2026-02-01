@@ -218,7 +218,7 @@ namespace Mat2D
 
         static void EnsureCamera()
         {
-            if (Object.FindObjectOfType<Camera>() != null) return;
+            if (Object.FindFirstObjectByType<Camera>() != null) return;
             var camGo = new GameObject("Main Camera");
             var cam = camGo.AddComponent<Camera>();
             cam.orthographic = true;
