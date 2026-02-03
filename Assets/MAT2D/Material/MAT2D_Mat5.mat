@@ -55,7 +55,7 @@ Material:
     m_Floats:
     - _AnimClipCount: 5
     - _AnimId: 0
-    - _AnimSpeed: 1
+    - _AnimSpeed: 2
     - _AnimTime: 39301.344
     - _DebugUV: 0
     - _EnableExternalAlpha: 0

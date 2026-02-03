@@ -161,6 +161,9 @@ namespace Mat2D
             }
 
             Transform root = rig.root != null ? rig.root : instance.transform;
+            
+            // Log rig root scale for diagnostics
+            Debug.Log($"MAT2D Baker: Rig root '{root.name}' scale: {root.localScale}, lossyScale: {root.lossyScale}");
 
             var clipStarts = new List<int>();
             var clipCounts = new List<int>();
@@ -168,8 +171,13 @@ namespace Mat2D
             int totalFrames = 0;
             for (int i = 0; i < _clips.Count; i++)
             {
-                // Calculate frames more accurately to avoid sampling beyond clip length
-                int frames = Mathf.Max(1, Mathf.CeilToInt(_clips[i].length * _sampleFps));
+                // Calculate frames to include both start (t=0) and end (t=length)
+                // For a 1-second clip at 30 FPS: we want frames at 0, 1/30, 2/30, ..., 30/30
+                // That's 31 frames total (0 through 30 inclusive)
+                // Formula: floor(length * fps) + 1
+                int frames = Mathf.FloorToInt(_clips[i].length * _sampleFps) + 1;
+                frames = Mathf.Max(1, frames); // At least 1 frame
+                
                 clipStarts.Add(totalFrames);
                 clipCounts.Add(frames);
                 totalFrames += frames;
@@ -209,6 +217,35 @@ namespace Mat2D
             var colors0 = new Color[6 * totalFrames];
             var colors1 = new Color[6 * totalFrames];
 
+            // Capture rest pose positions and scales (before any animation is applied)
+            // CRITICAL: Use the same method as mesh builder to ensure consistency
+            Vector3[] restPosePositions = new Vector3[6];
+            Vector3[] restPoseScales = new Vector3[6];
+            for (int part = 0; part < 6; part++)
+            {
+                var p = rig.parts[part];
+                
+                // Match mesh builder's position calculation method
+                Vector3 localPos;
+                if (p.parent == root)
+                {
+                    // Direct child - use localPosition (same as mesh builder)
+                    localPos = p.localPosition;
+                }
+                else
+                {
+                    // Nested hierarchy - use InverseTransformPoint (same as mesh builder)
+                    localPos = root.InverseTransformPoint(p.position);
+                }
+                
+                restPosePositions[part] = localPos;
+                
+                // Capture rest pose scale
+                // The mesh builder includes this scale in the mesh size (sizePixels)
+                // So we need to track it to calculate scale deltas during animation
+                restPoseScales[part] = p.localScale;
+            }
+
             try
             {
                 AnimationMode.StartAnimationMode();
@@ -219,6 +256,8 @@ namespace Mat2D
                     var clip = _clips[clipIndex];
                     int frames = clipCounts[clipIndex];
 
+                    Debug.Log($"MAT2D Baker: Baking clip '{clip.name}' - Length: {clip.length:F3}s, Frames: {frames}, FPS: {_sampleFps}");
+
                     for (int f = 0; f < frames; f++)
                     {
                         // Improved frame sampling: distribute frames evenly across clip length
@@ -226,29 +265,116 @@ namespace Mat2D
                         float t = frames > 1 ? (f / (float)(frames - 1)) * clip.length : 0f;
                         t = Mathf.Clamp(t, 0f, clip.length);
 
+                        if (f == 0 || f == frames - 1)
+                        {
+                            Debug.Log($"  Frame {f}/{frames - 1}: t = {t:F4}s");
+                        }
+
                         AnimationMode.SampleAnimationClip(instance, clip, t);
+
+                        // CRITICAL: Force transform updates after sampling animation
+                        // This ensures parent transforms are updated before we read child transforms
+                        root.GetComponentsInChildren<Transform>();
 
                         for (int part = 0; part < 6; part++)
                         {
                             var p = rig.parts[part];
-                            Matrix4x4 m = root.worldToLocalMatrix * p.localToWorldMatrix;
+                            
+                            // CRITICAL: Use the same position calculation method as mesh builder
+                            // This ensures baked positions match exactly with mesh builder
+                            Vector3 pos;
+                            if (p.parent == root)
+                            {
+                                // Direct child - use localPosition (same as mesh builder)
+                                pos = p.localPosition;
+                            }
+                            else
+                            {
+                                // Nested hierarchy - use InverseTransformPoint (same as mesh builder)
+                                pos = root.InverseTransformPoint(p.position);
+                            }
+                            
+                            // CRITICAL FIX: Subtract rest pose position to get relative offset
+                            pos -= restPosePositions[part];
+                            
+                            // CRITICAL FIX for nested parts (LArm, RArm, etc.):
+                            // Use LOCAL scale and rotation, NOT world scale/rotation
+                            // This prevents parent scale from affecting child parts
+                            // Each part in the mesh is rendered independently, so we need local transforms
+                            
+                            // CRITICAL FIX for rotation:
+                            // - Direct children: Use rotation relative to rig root
+                            // - Nested children: Use LOCAL rotation (relative to parent)
+                            // This is because in the mesh, each part is independent.
+                            // If we use world rotation for nested parts, parent rotation is applied twice!
+                            
+                            float angle;
+                            if (p.parent == root)
+                            {
+                                // Direct child - use rotation relative to rig root
+                                Quaternion worldRot = p.rotation;
+                                Quaternion rootRot = root.rotation;
+                                Quaternion localToRootRot = Quaternion.Inverse(rootRot) * worldRot;
+                                angle = localToRootRot.eulerAngles.z * Mathf.Deg2Rad;
+                            }
+                            else
+                            {
+                                // Nested child - use LOCAL rotation (relative to parent)
+                                // The mesh doesn't have parent-child relationships, so we can't
+                                // apply parent rotation in the shader
+                                angle = p.localEulerAngles.z * Mathf.Deg2Rad;
+                            }
+                            
+                            // CRITICAL FIX: Scale delta calculation
+                            // The mesh builder includes REST POSE scale in the mesh size (sizePixels).
+                            // But if the animation CHANGES the scale, we need to bake that change as a delta.
+                            // Formula: baked_scale = animated_scale / rest_pose_scale
+                            // 
+                            // Example:
+                            //   Rest pose scale: (2.0, 2.0) → Included in mesh
+                            //   Animated scale: (3.0, 3.0) → Animation changed it
+                            //   Baked scale: 3.0 / 2.0 = 1.5 → Delta to apply in shader
+                            //
+                            // If animation doesn't change scale:
+                            //   Animated scale: (2.0, 2.0) → Same as rest
+                            //   Baked scale: 2.0 / 2.0 = 1.0 → No change
+                            
+                            Vector3 animatedScale = p.localScale;
+                            Vector3 restScale = restPoseScales[part];
+                            
+                            float sx = Mathf.Abs(restScale.x) > 1e-6f ? Mathf.Abs(animatedScale.x) / Mathf.Abs(restScale.x) : 1.0f;
+                            float sy = Mathf.Abs(restScale.y) > 1e-6f ? Mathf.Abs(animatedScale.y) / Mathf.Abs(restScale.y) : 1.0f;
 
-                            Vector3 pos = m.GetColumn(3);
-                            Vector2 axisX = new Vector2(m.m00, m.m01);
-                            Vector2 axisY = new Vector2(m.m10, m.m11);
-
-                            float sx = axisX.magnitude;
-                            float sy = axisY.magnitude;
-                            if (sx < 1e-6f) sx = 1e-6f;
-                            if (sy < 1e-6f) sy = 1e-6f;
-
-                            float angle = Mathf.Atan2(axisX.y, axisX.x);
                             float s = Mathf.Sin(angle);
                             float c = Mathf.Cos(angle);
 
                             int idx = (globalFrame + f) * 6 + part;
                             colors0[idx] = new Color(pos.x, pos.y, s, c);
                             colors1[idx] = new Color(sx, sy, 0f, 0f);
+                            
+                            // Debug log for first frame to verify scale/rotation/position
+                            if (f == 0 && clipIndex == 0)
+                            {
+                                Vector3 transformScale = p.localScale;
+                                Vector3 worldScale = p.lossyScale;
+                                Vector3 animatedPos = pos + restPosePositions[part];
+                                bool isDirect = p.parent == root;
+                                float localRotZ = p.localEulerAngles.z;
+                                float worldRotZ = p.eulerAngles.z;
+                                Vector3 restScaleDebug = restPoseScales[part];
+                                
+                                Debug.Log($"  Part[{part}] '{p.name}' ({(isDirect ? "Direct" : "Nested")}):\n" +
+                                    $"    Rest Pos: ({restPosePositions[part].x:F3}, {restPosePositions[part].y:F3})\n" +
+                                    $"    Anim Pos: ({animatedPos.x:F3}, {animatedPos.y:F3})\n" +
+                                    $"    Delta Pos: ({pos.x:F3}, {pos.y:F3})\n" +
+                                    $"    Rest Scale: ({restScaleDebug.x:F3}, {restScaleDebug.y:F3}) [In mesh]\n" +
+                                    $"    Anim Scale: ({transformScale.x:F3}, {transformScale.y:F3})\n" +
+                                    $"    Baked Scale: ({sx:F3}, {sy:F3}) [Delta: anim/rest]\n" +
+                                    $"    World Scale: ({worldScale.x:F3}, {worldScale.y:F3})\n" +
+                                    $"    Local Rotation: {localRotZ:F1}° {(isDirect ? "[Not used]" : "[Used]")}\n" +
+                                    $"    World Rotation: {worldRotZ:F1}° {(isDirect ? "[Used]" : "[Not used]")}\n" +
+                                    $"    Baked Angle: {angle * Mathf.Rad2Deg:F1}°");
+                            }
                         }
                     }
 

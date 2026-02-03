@@ -171,6 +171,8 @@ MonoBehaviour:
       y: 0.63134766
       width: 0.38277534
       height: 0.35498047
+  rigPrefab: {fileID: 0}
+  autoFillFromRig: 0
   partSprites:
   - {fileID: -545572236, guid: 495925baaaf204417a037e97fb92a1f0, type: 3}
   - {fileID: -1974175427, guid: 495925baaaf204417a037e97fb92a1f0, type: 3}

@@ -17,6 +17,8 @@ namespace Mat2D
             public Vector2 offsetPixels;
             [Tooltip("Atlas UV rect (0-1).")]
             public Rect atlasRect;
+            [Tooltip("SpriteRenderer sorting order for Z-depth calculation.")]
+            public int sortingOrder;
         }
 
         [Header("Mesh")]
@@ -33,6 +35,10 @@ namespace Mat2D
         public Part[] parts = new Part[6];
 
         [Header("Auto Fill (optional)")]
+        [Tooltip("If assigned, parts will be built from the rig's transform hierarchy.")]
+        public GameObject rigPrefab;
+        public bool autoFillFromRig = false;
+        
         [Tooltip("If assigned, size/pivot/atlasRect will be filled from these sprites.")]
         public Sprite[] partSprites = new Sprite[6];
         public bool autoFillFromSprites = true;
@@ -87,6 +93,18 @@ namespace Mat2D
             }
         }
 
+        [ContextMenu("Build From Rig Prefab")]
+        public void BuildFromRigContextMenu()
+        {
+            if (rigPrefab == null)
+            {
+                Debug.LogError("MAT2D: Please assign a rigPrefab first.", this);
+                return;
+            }
+            BuildFromRig();
+            Rebuild();
+        }
+
         [ContextMenu("Rebuild")]
         public void Rebuild()
         {
@@ -95,7 +113,11 @@ namespace Mat2D
                 return;
             }
 
-            if (autoFillFromSprites)
+            if (autoFillFromRig && rigPrefab != null)
+            {
+                BuildFromRig();
+            }
+            else if (autoFillFromSprites)
             {
                 ApplySpriteData();
             }
@@ -148,8 +170,19 @@ namespace Mat2D
 
             float invPpu = pixelsPerUnit > 0f ? 1f / pixelsPerUnit : 0.01f;
 
+            // Create array of part indices sorted by sortingOrder (low to high)
+            // Lower sortingOrder = rendered first (back), higher = rendered last (front)
+            var sortedIndices = new int[partCount];
             for (int i = 0; i < partCount; i++)
             {
+                sortedIndices[i] = i;
+            }
+            System.Array.Sort(sortedIndices, (a, b) => parts[a].sortingOrder.CompareTo(parts[b].sortingOrder));
+
+            // Build mesh with parts in sorted order
+            for (int sortedIdx = 0; sortedIdx < partCount; sortedIdx++)
+            {
+                int i = sortedIndices[sortedIdx];
                 Part p = parts[i];
 
                 Vector2 size = p.sizePixels * invPpu;
@@ -161,8 +194,9 @@ namespace Mat2D
                 Vector2 tl = new Vector2(-pivot.x, size.y - pivot.y) + offset;
                 Vector2 tr = new Vector2(size.x - pivot.x, size.y - pivot.y) + offset;
 
-                float z = -i * zStep;
-                int v = i * 4;
+                // Z position is 0 for all parts - we rely on triangle order for sorting
+                float z = 0f;
+                int v = sortedIdx * 4;
 
                 vertices[v + 0] = new Vector3(bl.x, bl.y, z);
                 vertices[v + 1] = new Vector3(tl.x, tl.y, z);
@@ -175,6 +209,7 @@ namespace Mat2D
                 uv0[v + 2] = new Vector2(r.xMax, r.yMax);
                 uv0[v + 3] = new Vector2(r.xMax, r.yMin);
 
+                // Use original part index for animation
                 Vector2 partIndex = new Vector2(i, 0f);
                 uv2[v + 0] = partIndex;
                 uv2[v + 1] = partIndex;
@@ -186,7 +221,7 @@ namespace Mat2D
                 normals[v + 2] = Vector3.forward;
                 normals[v + 3] = Vector3.forward;
 
-                int t = i * 6;
+                int t = sortedIdx * 6;
                 triangles[t + 0] = v + 0;
                 triangles[t + 1] = v + 1;
                 triangles[t + 2] = v + 2;
@@ -203,6 +238,181 @@ namespace Mat2D
             _mesh.RecalculateBounds();
 
             meshFilter.sharedMesh = _mesh;
+        }
+
+        void BuildFromRig()
+        {
+            if (rigPrefab == null)
+            {
+                if (logWarnings)
+                {
+                    Debug.LogWarning("MAT2D: rigPrefab is null, cannot build from rig.", this);
+                }
+                return;
+            }
+
+            Mat2DRigDefinition rigDef = rigPrefab.GetComponent<Mat2DRigDefinition>();
+            if (rigDef == null)
+            {
+                if (logWarnings)
+                {
+                    Debug.LogWarning("MAT2D: rigPrefab does not have Mat2DRigDefinition component.", this);
+                }
+                return;
+            }
+
+            if (rigDef.parts == null || rigDef.parts.Length != 6)
+            {
+                if (logWarnings)
+                {
+                    Debug.LogWarning("MAT2D: rigPrefab's Mat2DRigDefinition does not have exactly 6 parts.", this);
+                }
+                return;
+            }
+
+            Texture2D referenceTex = null;
+            Transform rigRoot = rigDef.root != null ? rigDef.root : rigDef.transform;
+
+            for (int i = 0; i < 6; i++)
+            {
+                Transform partTransform = rigDef.parts[i];
+                if (partTransform == null)
+                {
+                    if (logWarnings)
+                    {
+                        Debug.LogWarning($"MAT2D: rigPrefab part[{i}] is null.", this);
+                    }
+                    continue;
+                }
+
+                Part p = parts[i];
+                
+                // Get sprite data from SpriteRenderer
+                SpriteRenderer sr = partTransform.GetComponent<SpriteRenderer>();
+                if (sr != null && sr.sprite != null)
+                {
+                    Sprite sprite = sr.sprite;
+                    
+                    // Use textureRect for packed sprites (handles SpriteAtlas correctly)
+                    Rect rect = sprite.textureRect;
+                    
+                    // CRITICAL FIX: Account for transform scale!
+                    // The sprite's texture size is in pixels, but if the transform is scaled,
+                    // the actual rendered size is different
+                    Vector3 localScale = partTransform.localScale;
+                    p.sizePixels = new Vector2(
+                        rect.width * Mathf.Abs(localScale.x), 
+                        rect.height * Mathf.Abs(localScale.y)
+                    );
+                    
+                    // sprite.pivot is in sprite's local space
+                    // CRITICAL FIX: Scale pivot as well!
+                    p.pivotPixels = new Vector2(
+                        sprite.pivot.x * Mathf.Abs(localScale.x),
+                        sprite.pivot.y * Mathf.Abs(localScale.y)
+                    );
+
+                    Texture2D tex = sprite.texture;
+                    if (tex != null)
+                    {
+                        if (referenceTex == null)
+                        {
+                            referenceTex = tex;
+                        }
+                        else if (logWarnings && referenceTex != tex)
+                        {
+                            Debug.LogWarning($"MAT2D: rigPrefab part[{i}] uses different texture ({tex.name}) than first part ({referenceTex.name}). " +
+                                "Ensure all parts are from the same atlas texture for correct UV mapping.", this);
+                        }
+
+                        float invW = 1f / tex.width;
+                        float invH = 1f / tex.height;
+                        
+                        // textureRect already contains the correct pixel coordinates in the atlas
+                        p.atlasRect = new Rect(rect.x * invW, rect.y * invH, rect.width * invW, rect.height * invH);
+                    }
+                    else if (logWarnings)
+                    {
+                        Debug.LogWarning($"MAT2D: Sprite texture is null for rigPrefab part[{i}]; cannot compute atlas rect.", this);
+                    }
+                }
+                else if (logWarnings)
+                {
+                    Debug.LogWarning($"MAT2D: rigPrefab part[{i}] does not have a SpriteRenderer or sprite.", this);
+                }
+
+                // Get position from transform (relative to rig root)
+                // Use localPosition if the part is a direct child of rig root, otherwise use InverseTransformPoint
+                Vector3 localPos;
+                if (partTransform.parent == rigRoot)
+                {
+                    // Direct child - use localPosition (more reliable)
+                    localPos = partTransform.localPosition;
+                }
+                else
+                {
+                    // Nested hierarchy - convert world position to rig root space
+                    localPos = rigRoot.InverseTransformPoint(partTransform.position);
+                }
+                
+                // The transform position represents where the sprite's pivot point is located.
+                // Our mesh builder uses offsetPixels as the position where the pivot should be.
+                // Since the mesh vertices are calculated as: position = (-pivot + offset)
+                // We need offsetPixels to represent where the pivot point should be in character space.
+                
+                // Account for rig scale (if rig is scaled, positions need to be adjusted)
+                Vector3 rigScale = rigRoot.lossyScale;
+                if (Mathf.Abs(rigScale.x - 1f) > 0.001f || Mathf.Abs(rigScale.y - 1f) > 0.001f)
+                {
+                    if (logWarnings)
+                    {
+                        Debug.LogWarning($"MAT2D: Rig root has non-uniform scale {rigScale}. This may cause positioning issues.", this);
+                    }
+                }
+                
+                p.offsetPixels = new Vector2(localPos.x * pixelsPerUnit, localPos.y * pixelsPerUnit);
+
+                // Store the part name and sorting order for reference
+                p.name = partTransform.name;
+                p.sortingOrder = sr != null ? sr.sortingOrder : 0;
+
+                // Debug logging
+                if (logWarnings)
+                {
+                    var sr_debug = partTransform.GetComponent<SpriteRenderer>();
+                    Vector3 partScale = partTransform.localScale;
+                    Vector2 spriteSize = sr_debug != null && sr_debug.sprite != null ? 
+                        new Vector2(sr_debug.sprite.textureRect.width, sr_debug.sprite.textureRect.height) : Vector2.zero;
+                    float calculatedZ = p.sortingOrder * zStep;
+                    
+                    Debug.Log($"MAT2D Part[{i}] '{p.name}':\n" +
+                        $"  Sorting Order: {p.sortingOrder} (Z: {calculatedZ:F4})\n" +
+                        $"  World Pos: {partTransform.position}\n" +
+                        $"  Local Pos: {localPos}\n" +
+                        $"  Transform Scale: ({partScale.x:F3}, {partScale.y:F3})\n" +
+                        $"  Sprite Size (texture): ({spriteSize.x:F1}, {spriteSize.y:F1})\n" +
+                        $"  Rig Root: {rigRoot.name} at {rigRoot.position}\n" +
+                        $"  Pivot (pixels): {p.pivotPixels}\n" +
+                        $"  Size (pixels): {p.sizePixels}\n" +
+                        $"  Offset (pixels): {p.offsetPixels}\n" +
+                        $"  Expected Bottom-Left: ({p.offsetPixels.x - p.pivotPixels.x}, {p.offsetPixels.y - p.pivotPixels.y})", this);
+                }
+
+                parts[i] = p;
+            }
+
+            if (autoAssignBaseMap && referenceTex != null && material != null)
+            {
+                if (material.HasProperty("_BaseMap"))
+                {
+                    material.SetTexture("_BaseMap", referenceTex);
+                }
+            }
+
+            if (debugFillIfMissing)
+            {
+                ApplyDebugFallbackIfInvalid();
+            }
         }
 
         void ApplySpriteData()
